@@ -8,7 +8,6 @@ import { BottomNav } from "../../components/BottomNav";
 import { api } from "../../lib/api";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { ErrorMessage } from "../../components/ErrorMessage";
-import { useInView } from "react-intersection-observer";
 
 /* ---------------- TYPES ---------------- */
 
@@ -114,9 +113,9 @@ export default function Transactions() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { ref: loadMoreRef, inView } = useInView();
-
   const fetchingRef = useRef(false);
+  const listRef = useRef<HTMLDivElement>(null);
+  const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
 
   /* ---------------- FETCH ---------------- */
 
@@ -173,15 +172,37 @@ export default function Transactions() {
     fetchData(0);
   }, [filter]);
 
-  /* ---------------- INFINITE SCROLL ---------------- */
+  /* ---------------- INFINITE SCROLL WITH INTERSECTION OBSERVER API ---------------- */
 
   useEffect(() => {
-    if (!inView) return;
+    // Use native Intersection Observer instead of the package
+    if (!loadMoreTriggerRef.current) return;
     if (!pagination.has_more) return;
     if (loadingMore || loading) return;
 
-    fetchData(pagination.offset + pagination.limit);
-  }, [inView, pagination, loadingMore, loading, fetchData]);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (entry.isIntersecting && pagination.has_more && !loadingMore && !loading) {
+          fetchData(pagination.offset + pagination.limit);
+        }
+      },
+      {
+        root: null, // viewport
+        rootMargin: "100px", // Load a bit before reaching the bottom
+        threshold: 0.1,
+      }
+    );
+
+    const currentElement = loadMoreTriggerRef.current;
+    observer.observe(currentElement);
+
+    return () => {
+      if (currentElement) {
+        observer.unobserve(currentElement);
+      }
+    };
+  }, [pagination, loadingMore, loading, fetchData]);
 
   /* ---------------- FILTER ---------------- */
 
@@ -255,7 +276,7 @@ export default function Transactions() {
         />
       )}
 
-      <div className="transactionsList">
+      <div className="transactionsList" ref={listRef}>
         {transactions.length === 0 ? (
           <div className="emptyState">
             <div className="emptyIcon">📭</div>
@@ -309,7 +330,11 @@ export default function Transactions() {
             })}
 
             {pagination.has_more && (
-              <div ref={loadMoreRef} className="loadMoreTrigger">
+              <div 
+                ref={loadMoreTriggerRef} 
+                className="loadMoreTrigger"
+                style={{ height: "20px", margin: "10px 0" }}
+              >
                 {loadingMore && <LoadingSpinner size="small" />}
               </div>
             )}
